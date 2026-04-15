@@ -1,7 +1,7 @@
 accelerate
 cmudict
 cn2an
-faster-whisper==0.10.1
+faster-whisper==0.10.1; sys_platform != 'win32'
 g2p_en
 GPUtil
 gradio>=4.32

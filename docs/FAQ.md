@@ -9,6 +9,14 @@ winget install ffmpeg
 ```
 によりffmpegをインストールできます。その後で試してみてください。
 
+また、Windows で `faster-whisper` を使いたい場合、`faster-whisper==0.10.1` が依存する `av==10.x` には利用可能な wheel がないため、そのままではインストールに失敗します。通常の依存関係を入れたあとで、次を追加実行してください。
+
+```
+uv pip install "faster-whisper==1.1.1"
+```
+
+インストールされていれば、`transcribe.py` は自動で `faster-whisper` を使います。未インストールなら Hugging Face Whisper にフォールバックします。
+
 ## Google Colabでの学習がエラーが何か出て動かない
 
 Google Colabのノートブックは以前のバージョンのノートブックのコピーを使っていませんか？

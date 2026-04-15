@@ -68,7 +68,9 @@ def unset_user_dict() -> None:
         # without worker
         import pyopenjtalk
 
-        pyopenjtalk.unset_user_dict()
+        unset_func = getattr(pyopenjtalk, "unset_user_dict", None)
+        if unset_func is not None:
+            unset_func()
 
 
 # initialize module when imported
@@ -125,7 +127,10 @@ def initialize_worker(port: int = WORKER_PORT) -> None:
                 count += 1
                 # 20: max number of retries
                 if count == 20:
-                    raise TimeoutError("サーバーに接続できませんでした")
+                    logger.warning(
+                        "pyopenjtalk worker server could not be reached; falling back to direct pyopenjtalk calls"
+                    )
+                    return
 
     logger.debug("pyopenjtalk worker server started")
     WORKER_CLIENT = client

@@ -1,7 +1,9 @@
 from collections.abc import Sequence
-from typing import Any, Union
+from typing import TYPE_CHECKING, Any, Union
 
-import onnxruntime
+
+if TYPE_CHECKING:
+    import onnxruntime
 
 
 def torch_device_to_onnx_providers(
@@ -40,9 +42,9 @@ def torch_device_to_onnx_providers(
 
 
 def get_onnx_device_options(
-    onnx_session: onnxruntime.InferenceSession,
+    onnx_session: "onnxruntime.InferenceSession",
     onnx_providers: Sequence[Union[str, tuple[str, dict[str, Any]]]],
-) -> tuple[str, int, onnxruntime.RunOptions]:
+) -> tuple[str, int, "onnxruntime.RunOptions"]:
     """
     ONNX 推論時のデバイス関連のオプションを取得する
 
@@ -101,6 +103,8 @@ def get_onnx_device_options(
     ## ref: https://github.com/microsoft/onnxruntime/issues/22297#issuecomment-2438629814
     ## ref: https://github.com/microsoft/onnxruntime/blob/v1.20.1/onnxruntime/test/python/onnxruntime_test_python.py#L1626-L1647
     ## ref: https://github.com/microsoft/onnxruntime/blob/v1.20.1/include/onnxruntime/core/session/onnxruntime_run_options_config_keys.h#L19-L27
+    import onnxruntime
+
     run_options = onnxruntime.RunOptions()
     if sess_options.enable_cpu_mem_arena is True:
         if first_provider == "CPUExecutionProvider":

@@ -126,17 +126,25 @@ def run():
         )
     )
 
-    backend = "nccl"
-    if platform.system() == "Windows":
-        backend = "gloo"  # If Windows,switch to gloo backend.
-    dist.init_process_group(
-        backend=backend,
-        init_method="env://",
-        timeout=datetime.timedelta(seconds=300),
-    )  # Use torchrun instead of mp.spawn
-    rank = dist.get_rank()
     local_rank = int(os.environ["LOCAL_RANK"])
-    n_gpus = dist.get_world_size()
+    use_distributed = int(os.environ["WORLD_SIZE"]) > 1
+    if use_distributed:
+        backend = "nccl"
+        if platform.system() == "Windows":
+            backend = "gloo"  # If Windows,switch to gloo backend.
+        dist.init_process_group(
+            backend=backend,
+            init_method="env://",
+            timeout=datetime.timedelta(seconds=300),
+        )  # Use torchrun instead of mp.spawn
+        rank = dist.get_rank()
+        n_gpus = dist.get_world_size()
+    else:
+        rank = 0
+        n_gpus = 1
+    device = torch.device(
+        f"cuda:{local_rank}" if torch.cuda.is_available() else "cpu"
+    )
 
     hps = HyperParameters.load_from_json(args.config)
     # This is needed because we have to pass values to `train_and_evaluate()`
@@ -206,7 +214,8 @@ def run():
         )
 
     torch.manual_seed(hps.train.seed)
-    torch.cuda.set_device(local_rank)
+    if torch.cuda.is_available():
+        torch.cuda.set_device(local_rank)
 
     global global_step
     writer = None
@@ -294,7 +303,7 @@ def run():
             3,
             0.1,
             gin_channels=hps.model.gin_channels if hps.data.n_speakers != 0 else 0,
-        ).cuda(local_rank)
+        ).to(device)
     if hps.model.use_spk_conditioned_encoder is True:
         if hps.data.n_speakers == 0:
             raise ValueError(
@@ -333,7 +342,7 @@ def run():
         use_spectral_norm=hps.model.use_spectral_norm,
         gin_channels=hps.model.gin_channels,
         slm=hps.model.slm,
-    ).cuda(local_rank)
+    ).to(device)
 
     if getattr(hps.train, "freeze_ZH_bert", False):
         logger.info("Freezing ZH bert encoder !!!")
@@ -359,7 +368,7 @@ def run():
         for param in net_g.dec.parameters():
             param.requires_grad = False
 
-    net_d = MultiPeriodDiscriminator(hps.model.use_spectral_norm).cuda(local_rank)
+    net_d = MultiPeriodDiscriminator(hps.model.use_spectral_norm).to(device)
     optim_g = torch.optim.AdamW(
         filter(lambda p: p.requires_grad, net_g.parameters()),
         hps.train.learning_rate,
@@ -381,10 +390,11 @@ def run():
         )
     else:
         optim_dur_disc = None
-    net_g = DDP(net_g, device_ids=[local_rank])
-    net_d = DDP(net_d, device_ids=[local_rank])
+    if use_distributed:
+        net_g = DDP(net_g, device_ids=[local_rank])
+        net_d = DDP(net_d, device_ids=[local_rank])
     dur_resume_lr = None
-    if net_dur_disc is not None:
+    if net_dur_disc is not None and use_distributed:
         net_dur_disc = DDP(
             net_dur_disc, device_ids=[local_rank], find_unused_parameters=True
         )
@@ -505,6 +515,7 @@ def run():
                 [writer, writer_eval],
                 pbar,
                 initial_step,
+                device,
             )
         else:
             train_and_evaluate(
@@ -521,6 +532,7 @@ def run():
                 None,
                 pbar,
                 initial_step,
+                device,
             )
         scheduler_g.step()
         scheduler_d.step()
@@ -601,6 +613,7 @@ def train_and_evaluate(
     writers,
     pbar: tqdm,
     initial_step: int,
+    device: torch.device,
 ):
     net_g, net_d, net_dur_disc = nets
     optim_g, optim_d, optim_dur_disc = optims
@@ -609,9 +622,11 @@ def train_and_evaluate(
     if writers is not None:
         writer, writer_eval = writers
 
-    train_loader.batch_sampler.set_epoch(epoch)
+    if hasattr(train_loader.batch_sampler, "set_epoch"):
+        train_loader.batch_sampler.set_epoch(epoch)
     global global_step
 
+    net_g_module = net_g.module if hasattr(net_g, "module") else net_g
     net_g.train()
     net_d.train()
     if net_dur_disc is not None:
@@ -631,28 +646,28 @@ def train_and_evaluate(
         en_bert,
         style_vec,
     ) in enumerate(train_loader):
-        if net_g.module.use_noise_scaled_mas:
+        if net_g_module.use_noise_scaled_mas:
             current_mas_noise_scale = (
-                net_g.module.mas_noise_scale_initial
-                - net_g.module.noise_scale_delta * global_step
+                net_g_module.mas_noise_scale_initial
+                - net_g_module.noise_scale_delta * global_step
             )
-            net_g.module.current_mas_noise_scale = max(current_mas_noise_scale, 0.0)
-        x, x_lengths = x.cuda(local_rank, non_blocking=True), x_lengths.cuda(
-            local_rank, non_blocking=True
+            net_g_module.current_mas_noise_scale = max(current_mas_noise_scale, 0.0)
+        x, x_lengths = x.to(device, non_blocking=True), x_lengths.to(
+            device, non_blocking=True
         )
-        spec, spec_lengths = spec.cuda(
-            local_rank, non_blocking=True
-        ), spec_lengths.cuda(local_rank, non_blocking=True)
-        y, y_lengths = y.cuda(local_rank, non_blocking=True), y_lengths.cuda(
-            local_rank, non_blocking=True
+        spec, spec_lengths = spec.to(device, non_blocking=True), spec_lengths.to(
+            device, non_blocking=True
         )
-        speakers = speakers.cuda(local_rank, non_blocking=True)
-        tone = tone.cuda(local_rank, non_blocking=True)
-        language = language.cuda(local_rank, non_blocking=True)
-        bert = bert.cuda(local_rank, non_blocking=True)
-        ja_bert = ja_bert.cuda(local_rank, non_blocking=True)
-        en_bert = en_bert.cuda(local_rank, non_blocking=True)
-        style_vec = style_vec.cuda(local_rank, non_blocking=True)
+        y, y_lengths = y.to(device, non_blocking=True), y_lengths.to(
+            device, non_blocking=True
+        )
+        speakers = speakers.to(device, non_blocking=True)
+        tone = tone.to(device, non_blocking=True)
+        language = language.to(device, non_blocking=True)
+        bert = bert.to(device, non_blocking=True)
+        ja_bert = ja_bert.to(device, non_blocking=True)
+        en_bert = en_bert.to(device, non_blocking=True)
+        style_vec = style_vec.to(device, non_blocking=True)
 
         with autocast(enabled=hps.train.bf16_run, dtype=torch.bfloat16):
             (
@@ -822,7 +837,7 @@ def train_and_evaluate(
                 and initial_step != global_step
             ):
                 if not hps.speedup:
-                    evaluate(hps, net_g, eval_loader, writer_eval)
+                    evaluate(hps, net_g, eval_loader, writer_eval, device)
                 assert hps.model_dir is not None
                 utils.checkpoints.save_checkpoint(
                     net_g,
@@ -892,8 +907,9 @@ def train_and_evaluate(
         logger.info(f"====> Epoch: {epoch}, step: {global_step}")
 
 
-def evaluate(hps, generator, eval_loader, writer_eval):
+def evaluate(hps, generator, eval_loader, writer_eval, device: torch.device):
     generator.eval()
+    generator_module = generator.module if hasattr(generator, "module") else generator
     image_dict = {}
     audio_dict = {}
     print()
@@ -914,18 +930,18 @@ def evaluate(hps, generator, eval_loader, writer_eval):
             en_bert,
             style_vec,
         ) in enumerate(eval_loader):
-            x, x_lengths = x.cuda(), x_lengths.cuda()
-            spec, spec_lengths = spec.cuda(), spec_lengths.cuda()
-            y, y_lengths = y.cuda(), y_lengths.cuda()
-            speakers = speakers.cuda()
-            bert = bert.cuda()
-            ja_bert = ja_bert.cuda()
-            en_bert = en_bert.cuda()
-            tone = tone.cuda()
-            language = language.cuda()
-            style_vec = style_vec.cuda()
+            x, x_lengths = x.to(device), x_lengths.to(device)
+            spec, spec_lengths = spec.to(device), spec_lengths.to(device)
+            y, y_lengths = y.to(device), y_lengths.to(device)
+            speakers = speakers.to(device)
+            bert = bert.to(device)
+            ja_bert = ja_bert.to(device)
+            en_bert = en_bert.to(device)
+            tone = tone.to(device)
+            language = language.to(device)
+            style_vec = style_vec.to(device)
             for use_sdp in [True, False]:
-                y_hat, attn, mask, *_ = generator.module.infer(
+                y_hat, attn, mask, *_ = generator_module.infer(
                     x,
                     x_lengths,
                     speakers,

@@ -4,11 +4,10 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Optional, Union
 
 import numpy as np
-import onnxruntime
 from numpy.typing import NDArray
 
 from style_bert_vits2.constants import Languages
-from style_bert_vits2.nlp import bert_models, onnx_bert_models
+from style_bert_vits2.nlp import bert_models
 from style_bert_vits2.utils import get_onnx_device_options
 
 
@@ -76,7 +75,7 @@ def extract_bert_feature(
 
     phone_level_feature = torch.cat(phone_level_feature, dim=0)
 
-    return phone_level_feature.T
+    return phone_level_feature.T.float()
 
 
 def extract_bert_feature_onnx(
@@ -99,6 +98,9 @@ def extract_bert_feature_onnx(
     Returns:
         NDArray[Any]: BERT の特徴量
     """
+
+    import onnxruntime
+    from style_bert_vits2.nlp import onnx_bert_models
 
     # トークナイザーとモデルの読み込み
     tokenizer = onnx_bert_models.load_tokenizer(Languages.EN)

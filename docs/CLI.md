@@ -102,3 +102,19 @@ python train_ms_jp_extra.py [--repo_id <username>/<repo_name>] [--skip_default_s
 Optional:
 - `--repo_id`: Hugging Face repository ID to upload the trained model to. You should have logged in using `huggingface-cli login` before running this command.
 - `--skip_default_style`: Skip making the default style vector. Use this if you want to resume training (since the default style vector has been already made).
+
+## Appendix. Transcribe arbitrary folders
+
+If your audio files are already organized outside `Data/{model_name}/raw`, use `scripts/transcribe_folder.py`.
+
+```bash
+d:/Style-Bert-VITS2/.venv/Scripts/python.exe scripts/transcribe_folder.py \
+	--input_dir CIAIR-VCV/f06/f06001/f0600101 \
+	--language ja \
+	--device cpu \
+	--engine hf-whisper \
+	--manifest_path CIAIR-VCV/f06/f06001/f0600101/transcriptions.tsv
+```
+
+By default it writes `*.whisper.txt` next to each audio file, so existing `*.txt` files are kept intact.
+It also compares those outputs with sibling reference `*.txt` files, writes mismatches to `ng_list.tsv` by default, and if they differ, replaces the `*.whisper.txt` output with the reference text.

@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional, Union
 
 import numpy as np
-import onnxruntime
 from numpy.typing import NDArray
 from pydantic import BaseModel, Field
 
@@ -29,6 +28,7 @@ from style_bert_vits2.voice import adjust_voice
 
 
 if TYPE_CHECKING:
+    import onnxruntime
     from style_bert_vits2.models.models import SynthesizerTrn
     from style_bert_vits2.models.models_jp_extra import (
         SynthesizerTrn as SynthesizerTrnJPExtra,
@@ -129,7 +129,7 @@ class TTSModel:
         self.null_model_params: Optional[dict[int, NullModelParam]] = None
 
         # onnx_session は ONNX 推論時のみ遅延初期化される
-        self.onnx_session: Optional[onnxruntime.InferenceSession] = None
+        self.onnx_session: Optional["onnxruntime.InferenceSession"] = None
 
     def load(self) -> None:
         """
@@ -199,6 +199,8 @@ class TTSModel:
 
         # ONNX 推論時
         else:
+            import onnxruntime
+
             # 推論時に一番優先される ExecutionProvider の名前を取得
             assert len(self.onnx_providers) > 0
             first_provider_name = (

@@ -21,7 +21,7 @@ PYOPENJTALK_FUNC_DICT = {
     "make_label": pyopenjtalk.make_label,
     "mecab_dict_index": pyopenjtalk.mecab_dict_index,
     "update_global_jtalk_with_user_dict": pyopenjtalk.update_global_jtalk_with_user_dict,
-    "unset_user_dict": pyopenjtalk.unset_user_dict,
+    "unset_user_dict": getattr(pyopenjtalk, "unset_user_dict", lambda: None),
 }
 
 

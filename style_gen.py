@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import numpy as np
+import soundfile as sf
 import torch
 from numpy.typing import NDArray
 from pyannote.audio import Inference, Model
@@ -28,7 +29,16 @@ class NaNValueError(ValueError):
 
 # 推論時にインポートするために短いが関数を書く
 def get_style_vector(wav_path: str) -> NDArray[Any]:
-    return inference(wav_path)  # type: ignore
+    waveform, sample_rate = sf.read(wav_path, dtype="float32")
+    if waveform.ndim == 1:
+        waveform = waveform[np.newaxis, :]
+    else:
+        waveform = waveform.T
+    audio = {
+        "waveform": torch.from_numpy(waveform),
+        "sample_rate": sample_rate,
+    }
+    return inference(audio)  # type: ignore
 
 
 def save_style_vector(wav_path: str):

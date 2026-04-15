@@ -147,7 +147,9 @@ def update_dict(
             raise RuntimeError("辞書のコンパイル時にエラーが発生しました。")
 
         # コンパイル済み辞書の置き換え・読み込み
-        pyopenjtalk.unset_user_dict()
+        unset_func = getattr(pyopenjtalk, "unset_user_dict", None)
+        if unset_func is not None:
+            unset_func()
         tmp_compiled_path.replace(compiled_dict_path)
         if compiled_dict_path.is_file():
             # pyopenjtalk.set_user_dict(str(compiled_dict_path.resolve(strict=True)))

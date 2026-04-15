@@ -128,7 +128,9 @@ if __name__ == "__main__":
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--compute_type", type=str, default="bfloat16")
     parser.add_argument("--use_hf_whisper", action="store_true")
-    parser.add_argument("--hf_repo_id", type=str, default="")
+    parser.add_argument(
+        "--hf_repo_id", type=str, default="openai/whisper-large-v3-turbo"
+    )
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--num_beams", type=int, default=1)
     parser.add_argument("--no_repeat_ngram_size", type=int, default=10)
@@ -176,9 +178,17 @@ if __name__ == "__main__":
     else:
         raise ValueError(f"{language} is not supported.")
 
-    if not args.use_hf_whisper:
-        from faster_whisper import WhisperModel
+    use_hf_whisper = args.use_hf_whisper
+    if not use_hf_whisper:
+        try:
+            from faster_whisper import WhisperModel
+        except ImportError:
+            logger.warning(
+                "faster-whisper is not installed. Falling back to Hugging Face Whisper."
+            )
+            use_hf_whisper = True
 
+    if not use_hf_whisper:
         logger.info(
             f"Loading faster-whisper model ({args.model}) with compute_type={compute_type}"
         )
@@ -200,7 +210,7 @@ if __name__ == "__main__":
             with open(output_file, "a", encoding="utf-8") as f:
                 f.write(f"{wav_rel_path}|{model_name}|{language_id}|{text}\n")
     else:
-        model_id = args.hf_repo_id
+        model_id = args.hf_repo_id or "openai/whisper-large-v3-turbo"
         logger.info(f"Loading HF Whisper model ({model_id})")
         pbar = tqdm(total=len(wav_files), file=SAFE_STDOUT, dynamic_ncols=True)
         results = transcribe_files_with_hf_whisper(
